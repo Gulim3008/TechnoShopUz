@@ -1,336 +1,156 @@
-<!DOCTYPE html>
-<html lang="uz">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>TechnoShop</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#0B0E14;
-    --surface:#141A26;
-    --surface-2:#1B2231;
-    --accent:#FF7A45;
-    --accent-2:#3DDC97;
-    --text:#EDEFF3;
-    --muted:#8B93A7;
-    --border:#232B3D;
-  }
-  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  body{
-    margin:0; background:var(--bg); color:var(--text);
-    font-family:'Inter',sans-serif; padding-bottom:24px;
-  }
-  h1,h2,h3,.brand{font-family:'Space Grotesk',sans-serif;}
+import sqlite3
+import os
 
-  header{
-    position:sticky; top:0; z-index:10;
-    background:var(--bg); padding:16px 16px 8px;
-    border-bottom:1px solid var(--border);
-  }
-  .brand{font-size:20px; font-weight:700; letter-spacing:-0.02em; display:flex; align-items:center; gap:8px;}
-  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);}
-  .search{
-    margin-top:12px; background:var(--surface); border:1px solid var(--border);
-    border-radius:12px; padding:11px 14px; display:flex; align-items:center; gap:8px;
-  }
-  .search input{
-    background:none; border:none; outline:none; color:var(--text); font-size:14px; width:100%;
-  }
-  .search input::placeholder{color:var(--muted);}
+DB_PATH = os.path.join(os.path.dirname(__file__), "shop.db")
 
-  .section-title{
-    font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
-    margin:20px 16px 10px; font-weight:600;
-  }
 
-  .cats{display:flex; gap:10px; overflow-x:auto; padding:0 16px 4px; scrollbar-width:none;}
-  .cats::-webkit-scrollbar{display:none;}
-  .cat-chip{
-    flex:0 0 auto; width:78px; text-align:center; cursor:pointer;
-  }
-  .cat-chip .img-wrap{
-    width:64px; height:64px; border-radius:18px; background:var(--surface);
-    border:1px solid var(--border); overflow:hidden; margin:0 auto 6px;
-    display:flex; align-items:center; justify-content:center; position:relative;
-    transition:border-color .15s;
-  }
-  .cat-chip.active .img-wrap{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent);}
-  .cat-chip .img-wrap::after{
-    content:""; position:absolute; top:0; left:0; right:0; height:2px; background:transparent;
-  }
-  .cat-chip.active .img-wrap::after{background:var(--accent);}
-  .cat-chip img{width:100%; height:100%; object-fit:cover;}
-  .cat-chip .fallback{font-size:22px;}
-  .cat-chip span{font-size:11px; color:var(--muted); line-height:1.3; display:block;}
-  .cat-chip.active span{color:var(--text);}
+def get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-  .grid{
-    display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:0 16px;
-  }
-  .card{
-    background:var(--surface); border:1px solid var(--border); border-radius:16px;
-    overflow:hidden; cursor:pointer;
-  }
-  .card .photo{
-    width:100%; aspect-ratio:1/1; background:var(--surface-2);
-    display:flex; align-items:center; justify-content:center; font-size:32px; color:var(--muted);
-    overflow:hidden;
-  }
-  .card .photo img{width:100%; height:100%; object-fit:cover;}
-  .card .info{padding:10px 12px 12px;}
-  .card .name{font-size:13.5px; font-weight:500; line-height:1.3; margin-bottom:6px;
-    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
-  .card .price{color:var(--accent-2); font-weight:700; font-size:14px;}
 
-  .empty{color:var(--muted); font-size:13px; padding:30px 16px; text-align:center;}
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            photo TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            price TEXT NOT NULL,
+            description TEXT,
+            photo TEXT,
+            FOREIGN KEY (category_id) REFERENCES categories (id)
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER,
+            product_name TEXT,
+            price TEXT,
+            qty TEXT,
+            customer_name TEXT,
+            phone TEXT,
+            user_id INTEGER,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-  .overlay{
-    position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:20;
-    display:none; align-items:flex-end; justify-content:center;
-  }
-  .overlay.show{display:flex;}
-  .sheet{
-    background:var(--surface); width:100%; max-width:520px; border-radius:20px 20px 0 0;
-    padding:20px 18px calc(20px + env(safe-area-inset-bottom));
-    max-height:88vh; overflow-y:auto;
-    animation:slideup .2s ease-out;
-  }
-  @keyframes slideup{from{transform:translateY(24px); opacity:0;} to{transform:translateY(0); opacity:1;}}
-  .sheet .handle{width:36px; height:4px; background:var(--border); border-radius:2px; margin:0 auto 14px;}
-  .sheet .photo-big{
-    width:100%; aspect-ratio:4/3; border-radius:14px; background:var(--surface-2);
-    overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:44px; color:var(--muted);
-    margin-bottom:14px;
-  }
-  .sheet .photo-big img{width:100%; height:100%; object-fit:cover;}
-  .sheet h2{font-size:18px; margin:0 0 6px;}
-  .sheet .price-big{color:var(--accent-2); font-weight:700; font-size:18px; margin-bottom:10px;}
-  .sheet .desc{color:var(--muted); font-size:13.5px; line-height:1.5; margin-bottom:18px;}
 
-  .field{margin-bottom:12px;}
-  .field label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px;}
-  .field input{
-    width:100%; background:var(--surface-2); border:1px solid var(--border); border-radius:10px;
-    padding:11px 12px; color:var(--text); font-size:14px; outline:none;
-  }
-  .field input:focus{border-color:var(--accent);}
+# ---------- CATEGORIES ----------
 
-  .btn{
-    width:100%; padding:14px; border:none; border-radius:12px; font-size:15px; font-weight:600;
-    cursor:pointer; font-family:'Space Grotesk',sans-serif;
-  }
-  .btn-primary{background:var(--accent); color:#1A0E08;}
-  .btn-primary:disabled{opacity:.5;}
-  .btn-ghost{background:none; color:var(--muted); margin-top:8px;}
+def add_category(name, photo=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("INSERT INTO categories (name, photo) VALUES (?, ?)", (name, photo))
+    conn.commit()
+    cid = c.lastrowid
+    conn.close()
+    return cid
 
-  .toast{
-    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-    background:var(--surface-2); border:1px solid var(--border); color:var(--text);
-    padding:12px 20px; border-radius:12px; font-size:13.5px; z-index:30;
-    opacity:0; pointer-events:none; transition:opacity .2s;
-  }
-  .toast.show{opacity:1;}
-</style>
-</head>
-<body>
 
-<header>
-  <div class="brand"><span class="dot"></span>TechnoShop</div>
-  <div class="search">
-    <span>🔎</span>
-    <input id="searchInput" placeholder="Mahsulotlarni qidirish" />
-  </div>
-</header>
+def get_categories():
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM categories ORDER BY id").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
-<div class="section-title">Kategoriyalar</div>
-<div class="cats" id="cats"></div>
 
-<div class="section-title" id="productsTitle">Mahsulotlar</div>
-<div class="grid" id="products"></div>
-<div class="empty" id="emptyState" style="display:none;">Bu bo'limda hali mahsulot yo'q</div>
+def get_category(cid):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM categories WHERE id = ?", (cid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
-<div class="overlay" id="overlay">
-  <div class="sheet">
-    <div class="handle"></div>
-    <div class="photo-big" id="sheetPhoto"></div>
-    <h2 id="sheetName"></h2>
-    <div class="price-big" id="sheetPrice"></div>
-    <div class="desc" id="sheetDesc"></div>
 
-    <div id="orderForm">
-      <div class="field">
-        <label>Ismingiz</label>
-        <input id="custName" placeholder="Ismingizni kiriting" />
-      </div>
-      <div class="field">
-        <label>Telefon raqamingiz</label>
-        <input id="custPhone" placeholder="+998 90 123 45 67" />
-      </div>
-      <div class="field">
-        <label>Nechta dona</label>
-        <input id="custQty" type="number" min="1" value="1" />
-      </div>
-      <button class="btn btn-primary" id="submitOrder">Buyurtma berish</button>
-      <button class="btn btn-ghost" id="closeSheet">Bekor qilish</button>
-    </div>
-  </div>
-</div>
+def delete_category(cid):
+    conn = get_conn()
+    conn.execute("DELETE FROM products WHERE category_id = ?", (cid,))
+    conn.execute("DELETE FROM categories WHERE id = ?", (cid,))
+    conn.commit()
+    conn.close()
 
-<div class="toast" id="toast"></div>
 
-<script>
-const tg = window.Telegram?.WebApp;
-tg?.ready();
-tg?.expand();
+# ---------- PRODUCTS ----------
 
-let categories = [];
-let currentCatId = null;
-let currentProduct = null;
+def add_product(category_id, name, price, description, photo=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO products (category_id, name, price, description, photo) VALUES (?, ?, ?, ?, ?)",
+        (category_id, name, price, description, photo),
+    )
+    conn.commit()
+    pid = c.lastrowid
+    conn.close()
+    return pid
 
-const catsEl = document.getElementById('cats');
-const productsEl = document.getElementById('products');
-const productsTitle = document.getElementById('productsTitle');
-const emptyState = document.getElementById('emptyState');
-const overlay = document.getElementById('overlay');
 
-function toast(msg){
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2200);
-}
+def get_products_by_category(cid):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM products WHERE category_id = ? ORDER BY id", (cid,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
-async function loadCategories(){
-  const res = await fetch('/api/categories');
-  categories = await res.json();
-  renderCats();
-  if(categories.length){
-    selectCategory(categories[0].id);
-  } else {
-    productsTitle.style.display = 'none';
-    emptyState.style.display = 'block';
-    emptyState.textContent = "Hali kategoriya qo'shilmagan";
-  }
-}
 
-function renderCats(){
-  catsEl.innerHTML = categories.map(c => `
-    <div class="cat-chip ${c.id===currentCatId?'active':''}" data-id="${c.id}">
-      <div class="img-wrap">
-        ${c.photo_url ? `<img src="${c.photo_url}"/>` : `<span class="fallback">🛍</span>`}
-      </div>
-      <span>${c.name}</span>
-    </div>
-  `).join('');
-  catsEl.querySelectorAll('.cat-chip').forEach(el=>{
-    el.addEventListener('click', ()=> selectCategory(parseInt(el.dataset.id)));
-  });
-}
+def get_product(pid):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM products WHERE id = ?", (pid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
-async function selectCategory(cid){
-  currentCatId = cid;
-  renderCats();
-  const res = await fetch(`/api/categories/${cid}/products`);
-  const products = await res.json();
-  renderProducts(products);
-}
 
-function renderProducts(products){
-  if(!products.length){
-    productsEl.innerHTML = '';
-    emptyState.style.display = 'block';
-    return;
-  }
-  emptyState.style.display = 'none';
-  productsEl.innerHTML = products.map(p => `
-    <div class="card" data-id="${p.id}">
-      <div class="photo">${p.photo_url ? `<img src="${p.photo_url}"/>` : '📦'}</div>
-      <div class="info">
-        <div class="name">${p.name}</div>
-        <div class="price">${formatPrice(p.price)} so'm</div>
-      </div>
-    </div>
-  `).join('');
-  productsEl.querySelectorAll('.card').forEach(el=>{
-    el.addEventListener('click', ()=> openProduct(parseInt(el.dataset.id)));
-  });
-}
+def delete_product(pid):
+    conn = get_conn()
+    conn.execute("DELETE FROM products WHERE id = ?", (pid,))
+    conn.commit()
+    conn.close()
 
-function formatPrice(p){
-  return p.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-}
 
-async function openProduct(pid){
-  const res = await fetch(`/api/products/${pid}`);
-  currentProduct = await res.json();
-  document.getElementById('sheetPhoto').innerHTML = currentProduct.photo_url
-    ? `<img src="${currentProduct.photo_url}"/>` : '📦';
-  document.getElementById('sheetName').textContent = currentProduct.name;
-  document.getElementById('sheetPrice').textContent = formatPrice(currentProduct.price) + " so'm";
-  document.getElementById('sheetDesc').textContent = currentProduct.description || '';
-  document.getElementById('custQty').value = 1;
-  document.getElementById('custName').value = tg?.initDataUnsafe?.user?.first_name || '';
-  document.getElementById('custPhone').value = '';
-  overlay.classList.add('show');
-}
+# ---------- ORDERS ----------
 
-document.getElementById('closeSheet').addEventListener('click', ()=>{
-  overlay.classList.remove('show');
-});
-overlay.addEventListener('click', (e)=>{
-  if(e.target === overlay) overlay.classList.remove('show');
-});
+def add_order(product_id, product_name, price, qty, customer_name, phone, user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO orders (product_id, product_name, price, qty, customer_name, phone, user_id, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')""",
+        (product_id, product_name, price, qty, customer_name, phone, user_id),
+    )
+    conn.commit()
+    oid = c.lastrowid
+    conn.close()
+    return oid
 
-document.getElementById('submitOrder').addEventListener('click', async ()=>{
-  const name = document.getElementById('custName').value.trim();
-  const phone = document.getElementById('custPhone').value.trim();
-  const qty = document.getElementById('custQty').value || '1';
 
-  if(!name || !phone){
-    toast('Ism va telefon raqamini kiriting');
-    return;
-  }
+def get_order(oid):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM orders WHERE id = ?", (oid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
-  const btn = document.getElementById('submitOrder');
-  btn.disabled = true;
-  btn.textContent = 'Yuborilmoqda...';
 
-  try{
-    const res = await fetch('/api/order', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        product_id: currentProduct.id,
-        qty, customer_name: name, phone,
-        user_id: tg?.initDataUnsafe?.user?.id || null
-      })
-    });
-    const data = await res.json();
-    if(data.ok){
-      overlay.classList.remove('show');
-      toast('✅ Buyurtma qabul qilindi! #' + data.order_id);
-      tg?.HapticFeedback?.notificationOccurred('success');
-    } else {
-      toast('❌ Xatolik yuz berdi');
-    }
-  } catch(e){
-    toast('❌ Tarmoq xatosi');
-  }
-  btn.disabled = false;
-  btn.textContent = 'Buyurtma berish';
-});
+def get_all_orders():
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
-document.getElementById('searchInput').addEventListener('input', (e)=>{
-  const q = e.target.value.toLowerCase();
-  document.querySelectorAll('.card').forEach(card=>{
-    const name = card.querySelector('.name').textContent.toLowerCase();
-    card.style.display = name.includes(q) ? '' : 'none';
-  });
-});
 
-loadCategories();
-</script>
-</body>
-</html>
+def set_order_status(oid, status):
+    conn = get_conn()
+    conn.execute("UPDATE orders SET status = ? WHERE id = ?", (status, oid))
+    conn.commit()
+    conn.close()

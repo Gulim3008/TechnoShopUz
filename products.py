@@ -1,6 +1,6 @@
 CATEGORIES = {
     "phones": {
-        "name": "📱 TELEFONLAR",
+        "name": "📱 Monobloclar",
         "products": [
             {"id": 1, "name": "iPhone 14", "price": "12000000", "description": "128GB, kafolat 12 oy"},
             {"id": 2, "name": "Samsung A52", "price": "8500000", "description": "128GB, kafolat 12 oy"},

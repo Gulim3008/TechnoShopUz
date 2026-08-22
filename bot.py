@@ -2,7 +2,7 @@ import logging
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, ContextTypes, filters
-from products import PRODUCTS, get_product
+from products import CATEGORIES, get_product, get_all_products
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
@@ -31,7 +31,21 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    for p in PRODUCTS:
+    keyboard = []
+    for cat_id, cat_data in CATEGORIES.items():
+        keyboard.append([InlineKeyboardButton(cat_data["name"], callback_data=f"cat_{cat_id}")])
+    await query.message.reply_text("📂 KATEGORIYALARNI TANLANG:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    cat_id = query.data.split("_")[1]
+    category = CATEGORIES.get(cat_id)
+    if not category:
+        await query.message.reply_text("❌ Kategoriya topilmadi")
+        return
+    
+    for p in category["products"]:
         btn = [[InlineKeyboardButton("🛒 Buyurtma", callback_data=f"order_{p['id']}")]]
         text = f"*{p['name']}*\n💰 {p['price']} so'm\n\n{p['description']}"
         await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btn))
@@ -123,6 +137,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_menu))
     app.add_handler(CallbackQueryHandler(catalog, pattern="^catalog$"))
+    app.add_handler(CallbackQueryHandler(show_category, pattern="^cat_"))
     app.add_handler(CallbackQueryHandler(view_orders, pattern="^view_orders$"))
     app.add_handler(CallbackQueryHandler(admin_confirm, pattern="^confirm_"))
     app.add_handler(CallbackQueryHandler(admin_reject, pattern="^reject_"))

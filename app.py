@@ -185,9 +185,68 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ Kategoriya qo'shish", callback_data="admin_add_cat")],
         [InlineKeyboardButton("➕ Mahsulot qo'shish", callback_data="admin_add_prod")],
+        [InlineKeyboardButton("🗑 Mahsulot/kategoriya o'chirish", callback_data="admin_manage")],
         [InlineKeyboardButton("📬 Buyurtmalarni ko'rish", callback_data="admin_view_orders")],
     ]
     await update.message.reply_text("🛠 ADMIN PANEL", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+# ---------- Delete categories / products ----------
+
+async def admin_manage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        return
+    cats = db.get_categories()
+    if not cats:
+        await query.message.reply_text("📭 Hali kategoriya yo'q")
+        return
+    keyboard = [[InlineKeyboardButton(f"📂 {c['name']}", callback_data=f"managecat_{c['id']}")] for c in cats]
+    await query.message.reply_text("Qaysi kategoriyani boshqarasiz?", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def admin_manage_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    cid = int(query.data.split("_")[1])
+    category = db.get_category(cid)
+    if not category:
+        await query.message.reply_text("❌ Kategoriya topilmadi")
+        return
+    products = db.get_products_by_category(cid)
+
+    keyboard = [[InlineKeyboardButton(f"❌ {p['name']} o'chirish", callback_data=f"delprod_{p['id']}")] for p in products]
+    keyboard.append([InlineKeyboardButton(f"🗑 BUTUN '{category['name']}' kategoriyani o'chirish", callback_data=f"delcat_{cid}")])
+
+    text = f"📂 {category['name']}\n\n" + (
+        "Mahsulotlar:" if products else "Bu kategoriyada mahsulot yo'q."
+    )
+    await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def admin_delete_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    pid = int(query.data.split("_")[1])
+    product = db.get_product(pid)
+    if product:
+        db.delete_product(pid)
+        await query.message.reply_text(f"✅ '{product['name']}' o'chirildi")
+    else:
+        await query.message.reply_text("❌ Mahsulot topilmadi")
+
+
+async def admin_delete_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    cid = int(query.data.split("_")[1])
+    category = db.get_category(cid)
+    if category:
+        db.delete_category(cid)
+        await query.message.reply_text(f"✅ '{category['name']}' kategoriyasi va uning barcha mahsulotlari o'chirildi")
+    else:
+        await query.message.reply_text("❌ Kategoriya topilmadi")
 
 
 # ---------- Add category flow ----------
@@ -327,6 +386,10 @@ def run_bot():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_menu))
     application.add_handler(CallbackQueryHandler(admin_view_orders, pattern="^admin_view_orders$"))
+    application.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage$"))
+    application.add_handler(CallbackQueryHandler(admin_manage_category, pattern="^managecat_"))
+    application.add_handler(CallbackQueryHandler(admin_delete_product, pattern="^delprod_"))
+    application.add_handler(CallbackQueryHandler(admin_delete_category, pattern="^delcat_"))
     application.add_handler(CallbackQueryHandler(order_confirm, pattern="^confirm_"))
     application.add_handler(CallbackQueryHandler(order_reject, pattern="^reject_"))
 

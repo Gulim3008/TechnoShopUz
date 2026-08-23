@@ -249,7 +249,7 @@ function renderProducts(products){
       <div class="photo">${p.photo_url ? `<img src="${p.photo_url}"/>` : '📦'}</div>
       <div class="info">
         <div class="name">${p.name}</div>
-        <div class="price">${formatPrice(p.price)}</div>
+        <div class="price">${p.price}</div>
       </div>
     </div>
   `).join('');
@@ -258,17 +258,13 @@ function renderProducts(products){
   });
 }
 
-function formatPrice(p){
-  return p.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-}
-
 async function openProduct(pid){
   const res = await fetch(`/api/products/${pid}`);
   currentProduct = await res.json();
   document.getElementById('sheetPhoto').innerHTML = currentProduct.photo_url
     ? `<img src="${currentProduct.photo_url}"/>` : '📦';
   document.getElementById('sheetName').textContent = currentProduct.name;
-  document.getElementById('sheetPrice').textContent = formatPrice(currentProduct.price) + " so'm";
+  document.getElementById('sheetPrice').textContent = currentProduct.price;
   document.getElementById('sheetDesc').textContent = currentProduct.description || '';
   document.getElementById('custQty').value = 1;
   document.getElementById('custName').value = tg?.initDataUnsafe?.user?.first_name || '';

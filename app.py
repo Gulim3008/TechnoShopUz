@@ -1,6 +1,8 @@
 import logging
 import os
+import sys
 import threading
+import traceback
 import uuid
 
 import requests
@@ -28,15 +30,42 @@ import db
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
+
+def log(msg):
+    print(msg, flush=True)
+
+
+log("🚀 app.py yuklanmoqda...")
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+_admin_raw = os.getenv("ADMIN_CHAT_ID", "0").strip()
+try:
+    ADMIN_CHAT_ID = int(_admin_raw) if _admin_raw else 0
+except ValueError:
+    log(f"⚠️ ADMIN_CHAT_ID noto'g'ri qiymat: {_admin_raw!r} — 0 sifatida olinmoqda")
+    ADMIN_CHAT_ID = 0
+
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://technoshopuz.onrender.com")
 
-BASE_DIR = os.path.dirname(__file__)
-UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+if not BOT_TOKEN:
+    log("❌ OGOHLANTIRISH: BOT_TOKEN environment variable topilmadi!")
 
-db.init_db()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads")
+
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    log(f"📁 Upload papkasi tayyor: {UPLOAD_DIR}")
+except Exception:
+    log("❌ Upload papkasini yaratishda xato:")
+    traceback.print_exc()
+
+try:
+    db.init_db()
+    log("🗄️ Ma'lumotlar bazasi tayyor")
+except Exception:
+    log("❌ Bazani ishga tushirishda xato:")
+    traceback.print_exc()
 
 # ============================================================
 #  FLASK APP (serves the Mini App + JSON API)
@@ -289,6 +318,10 @@ async def order_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
+    if not BOT_TOKEN:
+        log("❌ BOT_TOKEN yo'q, bot ishga tushmaydi (faqat Mini App ishlaydi).")
+        return
+
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -320,13 +353,28 @@ def run_bot():
     )
     application.add_handler(prod_conv)
 
-    print("✅ Bot polling ishga tushdi...")
+    log("✅ Bot polling ishga tushdi...")
     application.run_polling(stop_signals=None)
 
 
-if __name__ == "__main__":
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
+def run_bot_safe():
+    try:
+        run_bot()
+    except Exception:
+        log("❌ BOT THREAD ICHIDA XATOLIK:")
+        traceback.print_exc()
 
-    port = int(os.getenv("PORT", "10000"))
-    flask_app.run(host="0.0.0.0", port=port)
+
+if __name__ == "__main__":
+    try:
+        bot_thread = threading.Thread(target=run_bot_safe, daemon=True)
+        bot_thread.start()
+        log("🧵 Bot thread ishga tushirildi")
+
+        port = int(os.getenv("PORT", "10000"))
+        log(f"🌐 Flask server {port}-portda ishga tushmoqda (host=0.0.0.0)...")
+        flask_app.run(host="0.0.0.0", port=port)
+    except Exception:
+        log("❌ ASOSIY DASTURDA (main) XATOLIK:")
+        traceback.print_exc()
+        sys.exit(1)

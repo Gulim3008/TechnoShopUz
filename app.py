@@ -380,6 +380,9 @@ def run_bot():
     if not BOT_TOKEN:
         log("❌ BOT_TOKEN yo'q, bot ishga tushmaydi (faqat Mini App ishlaydi).")
         return
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     application = Application.builder().token(BOT_TOKEN).build()
 

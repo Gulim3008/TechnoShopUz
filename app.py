@@ -51,19 +51,16 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "https://technoshopuz.onrender.com")
 if not BOT_TOKEN:
     log("❌ OGOHLANTIRISH: BOT_TOKEN environment variable topilmadi!")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "uploads")
 
-try:
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    log(f"📁 Upload papkasi tayyor: {UPLOAD_DIR}")
-except Exception:
-    log("❌ Upload papkasini yaratishda xato:")
-    traceback.print_exc()
+if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+    log("❌ OGOHLANTIRISH: SUPABASE_URL yoki SUPABASE_SERVICE_KEY topilmadi! Rasm yuklash ishlamaydi.")
 
 try:
     db.init_db()
-    log("🗄️ Ma'lumotlar bazasi tayyor")
+    log("🗄️ Ma'lumotlar bazasi tayyor (Supabase Postgres)")
 except Exception:
     log("❌ Bazani ishga tushirishda xato:")
     traceback.print_exc()
@@ -84,7 +81,7 @@ def index():
 def api_categories():
     cats = db.get_categories()
     for c in cats:
-        c["photo_url"] = f"/static/uploads/{c['photo']}" if c.get("photo") else None
+        c["photo_url"] = c.get("photo") or None
     return jsonify(cats)
 
 
@@ -93,7 +90,7 @@ def api_products_by_category(cid):
     products = db.get_products_by_category(cid)
     for p in products:
         first_photo = p["photo"].split(",")[0] if p.get("photo") else None
-        p["photo_url"] = f"/static/uploads/{first_photo}" if first_photo else None
+        p["photo_url"] = first_photo or None
     return jsonify(products)
 
 
@@ -102,9 +99,9 @@ def api_product(pid):
     p = db.get_product(pid)
     if not p:
         return jsonify({"error": "not found"}), 404
-    filenames = [f for f in (p.get("photo") or "").split(",") if f]
-    p["photo_urls"] = [f"/static/uploads/{f}" for f in filenames]
-    p["photo_url"] = p["photo_urls"][0] if p["photo_urls"] else None
+    urls = [f for f in (p.get("photo") or "").split(",") if f]
+    p["photo_urls"] = urls
+    p["photo_url"] = urls[0] if urls else None
     return jsonify(p)
 
 
@@ -162,12 +159,28 @@ def is_admin(user_id):
 
 
 async def save_photo(context: ContextTypes.DEFAULT_TYPE, photo_size, prefix) -> str:
-    """Downloads a Telegram photo and returns its filename (relative to static/uploads)."""
+    """Downloads a Telegram photo and uploads it to Supabase Storage. Returns the public URL."""
     file = await context.bot.get_file(photo_size.file_id)
     filename = f"{prefix}_{uuid.uuid4().hex[:10]}.jpg"
-    path = os.path.join(UPLOAD_DIR, filename)
-    await file.download_to_drive(path)
-    return filename
+    file_bytes = await file.download_as_bytearray()
+
+    upload_url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{filename}"
+    resp = requests.post(
+        upload_url,
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            "Content-Type": "image/jpeg",
+            "x-upsert": "true",
+        },
+        data=bytes(file_bytes),
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201):
+        log(f"❌ Supabase'ga rasm yuklashda xato: {resp.status_code} {resp.text}")
+        raise Exception(f"Supabase upload failed: {resp.status_code}")
+
+    public_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{filename}"
+    return public_url
 
 
 # ---------- /start ----------

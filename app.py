@@ -14,6 +14,7 @@ from telegram import (
     InlineKeyboardMarkup,
     WebAppInfo,
     ReplyKeyboardRemove,
+    ReplyKeyboardMarkup,
 )
 from telegram.ext import (
     Application,
@@ -91,7 +92,8 @@ def api_categories():
 def api_products_by_category(cid):
     products = db.get_products_by_category(cid)
     for p in products:
-        p["photo_url"] = f"/static/uploads/{p['photo']}" if p.get("photo") else None
+        first_photo = p["photo"].split(",")[0] if p.get("photo") else None
+        p["photo_url"] = f"/static/uploads/{first_photo}" if first_photo else None
     return jsonify(products)
 
 
@@ -100,7 +102,9 @@ def api_product(pid):
     p = db.get_product(pid)
     if not p:
         return jsonify({"error": "not found"}), 404
-    p["photo_url"] = f"/static/uploads/{p['photo']}" if p.get("photo") else None
+    filenames = [f for f in (p.get("photo") or "").split(",") if f]
+    p["photo_urls"] = [f"/static/uploads/{f}" for f in filenames]
+    p["photo_url"] = p["photo_urls"][0] if p["photo_urls"] else None
     return jsonify(p)
 
 
@@ -122,7 +126,7 @@ def api_order():
     text = (
         f"🆕 BUYURTMA #{oid}\n"
         f"📦 {product['name']}\n"
-        f"💰 {product['price']} so'm\n"
+        f"💰 {product['price']}\n"
         f"📊 {qty} dona\n"
         f"👤 {customer_name}\n"
         f"📱 {phone}"
@@ -319,21 +323,43 @@ async def add_prod_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_prod_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["new_prod_desc"] = update.message.text
-    await update.message.reply_text("🖼 Endi mahsulot rasmini yuboring:")
+    context.user_data["new_prod_photos"] = []
+    keyboard = ReplyKeyboardMarkup([["✅ Tugatdi"]], resize_keyboard=True)
+    await update.message.reply_text(
+        "🖼 Mahsulot rasmlarini yuboring (bir nechtasini ketma-ket yuborishingiz mumkin).\n"
+        "Barchasini yuborib bo'lgach, pastdagi '✅ Tugatdi' tugmasini bosing.",
+        reply_markup=keyboard,
+    )
     return PROD_PHOTO
 
 
 async def add_prod_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.photo:
-        await update.message.reply_text("❌ Iltimos, rasm yuboring (fayl emas, oddiy rasm sifatida).")
+        await update.message.reply_text("❌ Rasm yuboring yoki '✅ Tugatdi' tugmasini bosing.")
         return PROD_PHOTO
     filename = await save_photo(context, update.message.photo[-1], "prod")
+    context.user_data.setdefault("new_prod_photos", []).append(filename)
+    count = len(context.user_data["new_prod_photos"])
+    await update.message.reply_text(f"✅ {count}-rasm qabul qilindi. Yana yuborishingiz mumkin, yoki '✅ Tugatdi' tugmasini bosing.")
+    return PROD_PHOTO
+
+
+async def add_prod_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    photos = context.user_data.get("new_prod_photos", [])
+    if not photos:
+        await update.message.reply_text("❌ Kamida bitta rasm yuboring.")
+        return PROD_PHOTO
     cid = context.user_data.pop("new_prod_cat")
     name = context.user_data.pop("new_prod_name")
     price = context.user_data.pop("new_prod_price")
     desc = context.user_data.pop("new_prod_desc")
-    pid = db.add_product(cid, name, price, desc, filename)
-    await update.message.reply_text(f"✅ Mahsulot qo'shildi!\n📦 {name} — {price} so'm (ID: {pid})")
+    context.user_data.pop("new_prod_photos", None)
+    photo_str = ",".join(photos)
+    pid = db.add_product(cid, name, price, desc, photo_str)
+    await update.message.reply_text(
+        f"✅ Mahsulot qo'shildi!\n📦 {name} — {price} (ID: {pid})\n🖼 {len(photos)} ta rasm bilan",
+        reply_markup=ReplyKeyboardRemove(),
+    )
     return ConversationHandler.END
 
 
@@ -367,6 +393,21 @@ async def order_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.set_order_status(oid, "confirmed")
     await query.message.reply_text(f"✅ #{oid} TASDIQLANDI")
 
+    order = db.get_order(oid)
+    if order and order.get("user_id"):
+        try:
+            await context.bot.send_message(
+                chat_id=order["user_id"],
+                text=(
+                    f"✅ Buyurtmangiz qabul qilindi!\n\n"
+                    f"📦 {order['product_name']}\n"
+                    f"📊 {order['qty']} dona\n\n"
+                    f"Tez orada siz bilan bog'lanamiz. Rahmat! 🙏"
+                ),
+            )
+        except Exception as e:
+            log(f"⚠️ Mijozga xabar yuborib bo'lmadi (user_id={order['user_id']}): {e}")
+
 
 async def order_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -375,11 +416,26 @@ async def order_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.set_order_status(oid, "rejected")
     await query.message.reply_text(f"❌ #{oid} RAD QILINDI")
 
+    order = db.get_order(oid)
+    if order and order.get("user_id"):
+        try:
+            await context.bot.send_message(
+                chat_id=order["user_id"],
+                text=(
+                    f"❌ Afsuski, buyurtmangiz bekor qilindi.\n\n"
+                    f"📦 {order['product_name']}\n\n"
+                    f"Savollaringiz bo'lsa, biz bilan bog'laning."
+                ),
+            )
+        except Exception as e:
+            log(f"⚠️ Mijozga xabar yuborib bo'lmadi (user_id={order['user_id']}): {e}")
+
 
 def run_bot():
     if not BOT_TOKEN:
         log("❌ BOT_TOKEN yo'q, bot ishga tushmaydi (faqat Mini App ishlaydi).")
         return
+
     import asyncio
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -413,7 +469,10 @@ def run_bot():
             PROD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_prod_name)],
             PROD_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_prod_price)],
             PROD_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_prod_desc)],
-            PROD_PHOTO: [MessageHandler(filters.PHOTO, add_prod_photo)],
+            PROD_PHOTO: [
+                MessageHandler(filters.Regex("^✅ Tugatdi$"), add_prod_finish),
+                MessageHandler(filters.PHOTO, add_prod_photo),
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )

@@ -180,7 +180,7 @@ async def save_photo(context: ContextTypes.DEFAULT_TYPE, photo_size, prefix) -> 
             "x-upsert": "true",
         },
         data=file_bytes,
-        timeout=30,
+        timeout=60,
     )
     if resp.status_code not in (200, 201):
         log(f"❌ Supabase'ga rasm yuklashda xato: {resp.status_code} {resp.text}")

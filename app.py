@@ -160,9 +160,16 @@ def is_admin(user_id):
 
 async def save_photo(context: ContextTypes.DEFAULT_TYPE, photo_size, prefix) -> str:
     """Downloads a Telegram photo and uploads it to Supabase Storage. Returns the public URL."""
+    from io import BytesIO
+
     file = await context.bot.get_file(photo_size.file_id)
     filename = f"{prefix}_{uuid.uuid4().hex[:10]}.jpg"
-    file_bytes = await file.download_as_bytearray()
+
+    buf = BytesIO()
+    await file.download_to_memory(out=buf)
+    file_bytes = buf.getvalue()
+
+    log(f"📤 Supabase'ga yuklanmoqda: {filename} ({len(file_bytes)} bayt)")
 
     upload_url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{filename}"
     resp = requests.post(
@@ -172,14 +179,15 @@ async def save_photo(context: ContextTypes.DEFAULT_TYPE, photo_size, prefix) -> 
             "Content-Type": "image/jpeg",
             "x-upsert": "true",
         },
-        data=bytes(file_bytes),
+        data=file_bytes,
         timeout=30,
     )
     if resp.status_code not in (200, 201):
         log(f"❌ Supabase'ga rasm yuklashda xato: {resp.status_code} {resp.text}")
-        raise Exception(f"Supabase upload failed: {resp.status_code}")
+        raise Exception(f"Supabase upload failed: {resp.status_code} {resp.text}")
 
     public_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{filename}"
+    log(f"✅ Rasm yuklandi: {public_url}")
     return public_url
 
 
@@ -290,7 +298,15 @@ async def add_cat_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.photo:
         await update.message.reply_text("❌ Iltimos, rasm yuboring (fayl emas, oddiy rasm sifatida).")
         return CAT_PHOTO
-    filename = await save_photo(context, update.message.photo[-1], "cat")
+    try:
+        filename = await save_photo(context, update.message.photo[-1], "cat")
+    except Exception as e:
+        log(f"❌ Kategoriya rasmini yuklashda xato: {e}")
+        await update.message.reply_text(
+            "❌ Rasmni yuklashda xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring, "
+            "yoki /cancel yozib bekor qiling."
+        )
+        return CAT_PHOTO
     name = context.user_data.pop("new_cat_name")
     cid = db.add_category(name, filename)
     await update.message.reply_text(f"✅ Kategoriya qo'shildi!\n📂 {name} (ID: {cid})")
@@ -350,7 +366,15 @@ async def add_prod_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.photo:
         await update.message.reply_text("❌ Rasm yuboring yoki '✅ Tugatdi' tugmasini bosing.")
         return PROD_PHOTO
-    filename = await save_photo(context, update.message.photo[-1], "prod")
+    try:
+        filename = await save_photo(context, update.message.photo[-1], "prod")
+    except Exception as e:
+        log(f"❌ Mahsulot rasmini yuklashda xato: {e}")
+        await update.message.reply_text(
+            "❌ Rasmni yuklashda xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring, "
+            "yoki /cancel yozib bekor qiling."
+        )
+        return PROD_PHOTO
     context.user_data.setdefault("new_prod_photos", []).append(filename)
     count = len(context.user_data["new_prod_photos"])
     await update.message.reply_text(f"✅ {count}-rasm qabul qilindi. Yana yuborishingiz mumkin, yoki '✅ Tugatdi' tugmasini bosing.")

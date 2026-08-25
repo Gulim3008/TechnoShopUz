@@ -38,7 +38,7 @@ def log(msg):
 
 log("🚀 app.py yuklanmoqda...")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 _admin_raw = os.getenv("ADMIN_CHAT_ID", "0").strip()
 try:
     ADMIN_CHAT_ID = int(_admin_raw) if _admin_raw else 0
@@ -46,14 +46,14 @@ except ValueError:
     log(f"⚠️ ADMIN_CHAT_ID noto'g'ri qiymat: {_admin_raw!r} — 0 sifatida olinmoqda")
     ADMIN_CHAT_ID = 0
 
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://technoshopuz.onrender.com")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://technoshopuz.onrender.com").strip()
 
 if not BOT_TOKEN:
     log("❌ OGOHLANTIRISH: BOT_TOKEN environment variable topilmadi!")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
-SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "uploads")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "uploads").strip()
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     log("❌ OGOHLANTIRISH: SUPABASE_URL yoki SUPABASE_SERVICE_KEY topilmadi! Rasm yuklash ishlamaydi.")
